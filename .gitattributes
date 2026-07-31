@@ -1,0 +1,15 @@
+# The .npy arrays are the source of truth for the banner. Never let line-ending
+# conversion near them, or a checkout on another machine silently corrupts them.
+*.npy   binary
+*.jpeg  binary
+*.jpg   binary
+*.png   binary
+
+# The SVGs are emitted as a single line, so there is nothing to convert -- but
+# pin it anyway so a future formatting change cannot introduce CRLF drift.
+*.svg   text eol=lf
+
+*.py    text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.html  text eol=lf

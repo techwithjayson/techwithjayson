@@ -1,0 +1,130 @@
+name: Generate Metrics Cards
+
+# Replaces the github-readme-stats / streak-stats cards, which cannot work on a
+# profile page: the public stats instance returns 503, and streak-stats answers
+# in ~9.8s while GitHub's camo image proxy abandons the fetch at ~4.3s.
+#
+# These renders are committed into this repo and served from
+# raw.githubusercontent.com, which is NOT camo-proxied -- the same path the
+# banner and the snake already use, both of which render instantly.
+#
+# Requires one repository secret: METRICS_TOKEN.
+# A classic PAT with NO SCOPES ticked is enough for everything used here.
+
+# Manual-only for now. The stats cards are not in the README (the METRICS_TOKEN
+# secret was never set), so a daily cron would just fail and email about it.
+#
+# To turn these on:
+#   1. Add a scope-less classic PAT as the METRICS_TOKEN repository secret
+#   2. Actions -> Generate Metrics Cards -> Run workflow
+#   3. python make_readme.py --cards metrics   (then commit README.md)
+#   4. Optionally restore the cron below
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "30 2 * * *"
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    strategy:
+      # Each render commits to the repo, so they must not race each other.
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include:
+          - name: calendar
+            theme: dark
+          - name: calendar
+            theme: light
+          - name: stats
+            theme: dark
+          - name: stats
+            theme: light
+          - name: languages
+            theme: dark
+          - name: languages
+            theme: light
+
+    steps:
+      # Without this, a missing secret surfaces as 12 identical "you must
+      # provide a valid GitHub personal token" errors buried in the render
+      # step. Fail fast and say exactly what to do instead.
+      - name: Verify METRICS_TOKEN is present
+        env:
+          T: ${{ secrets.METRICS_TOKEN }}
+        run: |
+          if [ -z "$T" ]; then
+            echo "::error::METRICS_TOKEN repository secret is empty or missing."
+            echo "::error::Add it under Settings > Secrets and variables > Actions."
+            echo "::error::Name must be exactly METRICS_TOKEN (case-sensitive)."
+            exit 1
+          fi
+          echo "METRICS_TOKEN is present."
+
+      - name: Palette
+        id: css
+        run: |
+          if [ "${{ matrix.theme }}" = "dark" ]; then
+            {
+              echo 'text=#8b949e'; echo 'bright=#e6edf3'; echo 'accent=#7ee787'
+              echo 'icon=#39d353';  echo 'empty=#2d3343'
+              echo 'l1=#0e4429'; echo 'l2=#006d32'; echo 'l3=#26a641'; echo 'l4=#39d353'
+              echo 'edge=rgba(255,255,255,0.07)'
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo 'text=#57606a'; echo 'bright=#1f2328'; echo 'accent=#116329'
+              echo 'icon=#1a7f37';  echo 'empty=#ebedf0'
+              echo 'l1=#aceebb'; echo 'l2=#4ac26b'; echo 'l3=#2da44e'; echo 'l4=#116329'
+              echo 'edge=rgba(27,31,35,0.06)'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Render ${{ matrix.name }} (${{ matrix.theme }})
+        uses: lowlighter/metrics@latest
+        with:
+          token: ${{ secrets.METRICS_TOKEN }}
+          user: techwithjayson
+          committer_branch: main
+          committer_message: "Update ${{ matrix.name }} metrics (${{ matrix.theme }}) [skip ci]"
+          filename: metrics-${{ matrix.name }}-${{ matrix.theme }}.svg
+          config_timezone: Asia/Manila
+          # There is no theme input on this action, and the rendered cards have
+          # NO background at all -- they are transparent and sit straight on
+          # GitHub's canvas. So the whole theme is these overrides. Selectors
+          # taken from a real render, not guessed: text colour lives on `svg`,
+          # headings on h1/h2/h3, plugin icons on `.field svg`, and the
+          # calendar reads the --color-calendar-* custom properties.
+          extras_css: |
+            svg { color: ${{ steps.css.outputs.text }}; }
+            h1, h2, h3 { color: ${{ steps.css.outputs.accent }}; }
+            .field svg { fill: ${{ steps.css.outputs.icon }}; }
+            strong, b, .bold { color: ${{ steps.css.outputs.bright }}; }
+            :root {
+              --color-calendar-graph-day-bg: ${{ steps.css.outputs.empty }};
+              --color-calendar-graph-day-L1-bg: ${{ steps.css.outputs.l1 }};
+              --color-calendar-graph-day-L2-bg: ${{ steps.css.outputs.l2 }};
+              --color-calendar-graph-day-L3-bg: ${{ steps.css.outputs.l3 }};
+              --color-calendar-graph-day-L4-bg: ${{ steps.css.outputs.l4 }};
+              --color-calendar-graph-day-border: ${{ steps.css.outputs.edge }};
+              --color-calendar-graph-day-L1-border: ${{ steps.css.outputs.edge }};
+              --color-calendar-graph-day-L2-border: ${{ steps.css.outputs.edge }};
+              --color-calendar-graph-day-L3-border: ${{ steps.css.outputs.edge }};
+              --color-calendar-graph-day-L4-border: ${{ steps.css.outputs.edge }};
+            }
+
+          # --- per-card content -------------------------------------------
+          base: ${{ matrix.name == 'stats' && 'header, repositories' || '' }}
+
+          plugin_isocalendar: ${{ matrix.name == 'calendar' }}
+          plugin_isocalendar_duration: full-year
+
+          plugin_languages: ${{ matrix.name == 'languages' }}
+          plugin_languages_limit: 8
+          plugin_languages_details: percentage
+          plugin_languages_sections: most-used

@@ -1,0 +1,19 @@
+{
+  "grid": [
+    300,
+    340
+  ],
+  "dark_ink_cells": 18732,
+  "light_ink_cells": 31500,
+  "dark_ink_coverage": 0.1836,
+  "light_ink_coverage": 0.3088,
+  "mask_coverage": 0.5112,
+  "dark_runs": 12403,
+  "light_runs": 14725,
+  "drift_bands": 94,
+  "intro_groups": 60,
+  "straight_boundary_dark": 0.0219,
+  "straight_boundary_light": 0.0482,
+  "intro_evenness_dark": 0.061,
+  "intro_evenness_light": 0.055
+}
