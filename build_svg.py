@@ -19,6 +19,7 @@ Run:  python build_svg.py
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -182,6 +183,20 @@ def intro_layer(rle: np.ndarray, intro: np.ndarray, colour: str, n_groups: int) 
     return "".join(out)
 
 
+def static_layer(rle: np.ndarray, colour: str) -> str:
+    """The portrait at rest, with no animation at all.
+
+    SMIL cannot be disabled by CSS, so `prefers-reduced-motion` needs a genuinely
+    separate file rather than a paused version of the animated one. Band grouping
+    is irrelevant here -- every run is one colour -- so they collapse into a
+    single path.
+    """
+    return (
+        f'<g fill="none" stroke="{colour}" stroke-width="{f(PITCH)}"'
+        f' shape-rendering="crispEdges"><path d="{run_path(rle)}"/></g>'
+    )
+
+
 def loop_layer(rle: np.ndarray, band: np.ndarray, offsets: np.ndarray, colour: str) -> str:
     """94 drift bands. Each translates ~42% toward the first logo's centroid
     while fading, then returns."""
@@ -288,7 +303,7 @@ def corner_marks(t: dict) -> str:
     )
 
 
-def build(theme: str, metrics: dict) -> str:
+def build(theme: str, metrics: dict, static: bool = False) -> str:
     t = THEMES[theme]
     suffix = "dark" if theme == "dark" else "light"
 
@@ -339,9 +354,12 @@ def build(theme: str, metrics: dict) -> str:
     s.append(corner_marks(t))
 
     s.append('<g clip-path="url(#pclip)">')
-    s.append(intro_layer(rle, intro, t["portrait"], n_intro))
-    s.append(loop_layer(rle, band, offsets, t["portrait"]))
-    s.append(traveller_layer(Pp, L1, L2, L3, t["portrait"]))
+    if static:
+        s.append(static_layer(rle, t["portrait"]))
+    else:
+        s.append(intro_layer(rle, intro, t["portrait"], n_intro))
+        s.append(loop_layer(rle, band, offsets, t["portrait"]))
+        s.append(traveller_layer(Pp, L1, L2, L3, t["portrait"]))
     s.append("</g>")
 
     s.append(f'<line x1="47" y1="534" x2="425" y2="534" stroke="{t["panel_stroke"]}"'
@@ -361,14 +379,17 @@ def build(theme: str, metrics: dict) -> str:
     s.append(text(ROW_X + pill_w + 18, 94, "SYSTEM.INFO", t["muted"], FS_HEAD))
 
     lx = ROW_END - adv("LIVE", FS_LIVE)
-    s.append(f'<circle cx="{f(lx - 16)}" cy="90" r="4" fill="{t["live"]}">'
-             f'<animate attributeName="opacity" values="1;0.25;1" dur="1.6s"'
-             f' repeatCount="indefinite"/></circle>')
-    s.append(f'<circle cx="{f(lx - 16)}" cy="90" r="4" fill="none"'
-             f' stroke="{t["live"]}" stroke-width="1.2">'
-             f'<animate attributeName="r" values="4;10" dur="1.6s" repeatCount="indefinite"/>'
-             f'<animate attributeName="opacity" values="0.7;0" dur="1.6s"'
-             f' repeatCount="indefinite"/></circle>')
+    if static:
+        s.append(f'<circle cx="{f(lx - 16)}" cy="90" r="4" fill="{t["live"]}"/>')
+    else:
+        s.append(f'<circle cx="{f(lx - 16)}" cy="90" r="4" fill="{t["live"]}">'
+                 f'<animate attributeName="opacity" values="1;0.25;1" dur="1.6s"'
+                 f' repeatCount="indefinite"/></circle>')
+        s.append(f'<circle cx="{f(lx - 16)}" cy="90" r="4" fill="none"'
+                 f' stroke="{t["live"]}" stroke-width="1.2">'
+                 f'<animate attributeName="r" values="4;10" dur="1.6s" repeatCount="indefinite"/>'
+                 f'<animate attributeName="opacity" values="0.7;0" dur="1.6s"'
+                 f' repeatCount="indefinite"/></circle>')
     s.append(text(lx, 94, "LIVE", t["live"], FS_LIVE, weight="600"))
 
     s.append(f'<line x1="{f(ROW_X)}" y1="118" x2="{f(ROW_END)}" y2="118"'
@@ -385,13 +406,78 @@ def build(theme: str, metrics: dict) -> str:
     return "".join(s)
 
 
+def build_portrait(theme: str, static: bool = False) -> str:
+    """Just the dithered portrait — no window chrome, no info panel.
+
+    For the website hero, where the terminal frame and the SYSTEM.INFO readout
+    are rebuilt as real HTML so the copy is live, selectable, indexable and the
+    CTAs are genuine links. Only the artwork has to stay SVG.
+
+    The viewBox keeps the original coordinate system rather than translating to
+    the origin, so the traveller and logo point clouds — which are baked in
+    those coordinates — need no adjustment.
+    """
+    t = THEMES[theme]
+    suffix = "dark" if theme == "dark" else "light"
+
+    rle = np.load(DATA / f"{suffix}_rle.npy")
+    band = np.load(DATA / f"{suffix}_band.npy")
+    offsets = np.load(DATA / f"{suffix}_offsets.npy")
+    intro = np.load(DATA / f"{suffix}_intro.npy")
+    n_intro = int(intro.max()) + 1
+
+    Pp = np.load(DATA / "traveller_portrait.npy")
+    L1 = np.load(DATA / "logo_next.npy")
+    L2 = np.load(DATA / "logo_code.npy")
+    L3 = np.load(DATA / "logo_vercel.npy")
+
+    s = [
+        f'<svg xmlns="http://www.w3.org/2000/svg"'
+        f' viewBox="{f(PORTRAIT_X0)} {f(PORTRAIT_Y0)} {f(PORTRAIT_W)} {f(PORTRAIT_H)}"'
+        f' width="{f(PORTRAIT_W)}" height="{f(PORTRAIT_H)}" role="img"'
+        f' aria-label="Dithered portrait of Jayson Peralta">'
+    ]
+    if static:
+        s.append(static_layer(rle, t["portrait"]))
+    else:
+        s.append(intro_layer(rle, intro, t["portrait"], n_intro))
+        s.append(loop_layer(rle, band, offsets, t["portrait"]))
+        s.append(traveller_layer(Pp, L1, L2, L3, t["portrait"]))
+    s.append("</svg>")
+    return "".join(s)
+
+
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--static", action="store_true",
+        help="also emit <theme>-static.svg, the prefers-reduced-motion fallback",
+    )
+    ap.add_argument(
+        "--portrait-only", action="store_true",
+        help="also emit portrait-<theme>[-static].svg with no window chrome",
+    )
+    args = ap.parse_args()
+
     metrics = json.loads((DATA / "metrics.json").read_text())
     for theme in ("dark", "light"):
         svg = build(theme, metrics)
         out = ROOT / f"{theme}.svg"
         out.write_text(svg, encoding="utf-8")
-        print(f"{out.name:10s} {len(svg.encode('utf-8')) / 1024:8.1f} KB")
+        print(f"{out.name:18s} {len(svg.encode('utf-8')) / 1024:8.1f} KB")
+
+        if args.static:
+            svg = build(theme, metrics, static=True)
+            out = ROOT / f"{theme}-static.svg"
+            out.write_text(svg, encoding="utf-8")
+            print(f"{out.name:18s} {len(svg.encode('utf-8')) / 1024:8.1f} KB")
+
+        if args.portrait_only:
+            for st in (False, True):
+                svg = build_portrait(theme, static=st)
+                name = f"portrait-{theme}{'-static' if st else ''}.svg"
+                (ROOT / name).write_text(svg, encoding="utf-8")
+                print(f"{name:18s} {len(svg.encode('utf-8')) / 1024:8.1f} KB")
 
 
 if __name__ == "__main__":
